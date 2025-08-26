@@ -460,7 +460,6 @@ export default function Home() {
     </div>
   );
 }
-
 // Backend Auto Print Function
 const autoPrint = async (dataURL: string) => {
   const printId = Date.now();
@@ -522,3 +521,4 @@ const browserPrint = (dataURL: string) => {
     printWindow.document.close();
   }
 };
+
