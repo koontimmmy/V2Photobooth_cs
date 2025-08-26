@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -18,18 +17,13 @@ export default function Home() {
   
   // Payment states
   const [showPayment, setShowPayment] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [, setPaymentMethod] = useState<string>("");
   const [qrCodeData, setQrCodeData] = useState<string>("");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentTimeout, setPaymentTimeout] = useState(0);
 
   // Auto start camera on mount
-  useEffect(() => {
-    startCamera();
-  }, []);
-
-  // -------- Camera Control ----------
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     if (isActive) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -40,20 +34,19 @@ export default function Home() {
         await videoRef.current.play();
         setIsActive(true);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Camera error:", err);
-      setError("Cannot access camera: " + err.message);
+      setError("Cannot access camera: " + (err instanceof Error ? err.message : 'Unknown error'));
     }
-  };
+  }, [isActive]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-      setIsActive(false);
-    }
-  };
+  useEffect(() => {
+    startCamera();
+  }, [startCamera]);
+
+  // -------- Camera Control ----------
+
+
 
   // -------- Countdown + Capture ----------
   const startCountdown = () => {
@@ -205,12 +198,12 @@ export default function Home() {
     setPaymentMethod("");
     setPaymentTimeout(0);
     // หยุดการตรวจสอบสถานะ
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
     // หยุด timeout
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
   };
 
@@ -238,7 +231,7 @@ export default function Home() {
     }, 1000);
     
     // เก็บ interval reference
-    (window as any).timeoutInterval = interval;
+    (window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval = interval;
   };
 
   const handlePaymentTimeout = () => {
@@ -248,11 +241,11 @@ export default function Home() {
     setPaymentTimeout(0);
     
     // หยุดการตรวจสอบสถานะ
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
   };
 
@@ -297,14 +290,14 @@ export default function Home() {
     }, 3000); // เช็คทุก 3 วินาที (ลดความถี่ลง)
     
     // เก็บ interval reference
-    (window as any).pollInterval = interval;
+    (window as { pollInterval?: NodeJS.Timeout }).pollInterval = interval;
     
     // หยุด polling หลังจาก 5 นาที (100 ครั้ง)
     setTimeout(() => {
-      if ((window as any).pollInterval === interval) {
+      if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval === interval) {
         console.log('⏰ Payment polling timeout - stopping');
         clearInterval(interval);
-        (window as any).pollInterval = null;
+        (window as { pollInterval?: NodeJS.Timeout }).pollInterval = undefined;
       }
     }, 5 * 60 * 1000);
   };
@@ -317,11 +310,11 @@ export default function Home() {
     setShowPayment(false);
     
     // หยุด timers
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
     
     // เริ่มการถ่ายรูป

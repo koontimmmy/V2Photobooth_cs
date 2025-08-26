@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     let requestBody;
     try {
       requestBody = await request.json();
-    } catch (error) {
+    } catch {
       return NextResponse.json({ 
         error: 'Invalid JSON',
         details: 'Request body must be valid JSON'
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
             referenceId: chargeRequest.referenceId
           })
         }).catch(() => {});
-      } catch (e) {
+      } catch {
         console.warn('Failed to set initial pending status');
       }
       

@@ -15,7 +15,7 @@ function verifyWebhookSignature(
   signature: string,
   timestamp: string,
   secret: string
-): { isValid: boolean; details: any } {
+): { isValid: boolean; details: unknown } {
   try {
     const now = Math.floor(Date.now() / 1000);
     const webhookTimestamp = parseInt(timestamp, 10);

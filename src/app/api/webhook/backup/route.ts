@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 
+type SupportedEvent = 'charge.succeeded' | 'charge.failed' | 'charge.expired' | 'payment_link.paid' | 'payment_link.expired';
+
+interface ChargePayload {
+  chargeId?: string;
+  amount?: number;
+  paymentMethod?: { type?: string } | null;
+  referenceId?: string;
+}
+
+interface PaymentLinkPayload {
+  id?: string;
+  chargeId?: string;
+  amount?: number;
+  paymentMethod?: { type?: string } | null;
+  referenceId?: string;
+}
+
 // Backup webhook configuration
 const WEBHOOK_CONFIG = {
   SIGNATURE_HEADER: 'x-beam-signature',
@@ -99,7 +116,7 @@ async function updatePaymentStatus(
   origin: string,
   chargeId: string,
   status: 'succeeded' | 'failed' | 'expired',
-  additionalData?: Record<string, any>
+  additionalData?: Record<string, unknown>
 ) {
   try {
     const response = await fetch(`${origin}/api/payment-status`, {
@@ -194,13 +211,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processWebhookEvent(body: any, request: NextRequest): Promise<NextResponse> {
-  const eventType = body.type;
+async function processWebhookEvent(body: unknown, request: NextRequest): Promise<NextResponse> {
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
+  const eventType = (body as { type?: string }).type as SupportedEvent | undefined;
   const origin = request.nextUrl.origin;
   
   console.log('Backup webhook processing event:', eventType);
   
-  if (!WEBHOOK_CONFIG.SUPPORTED_EVENTS.includes(eventType)) {
+  if (!eventType || !WEBHOOK_CONFIG.SUPPORTED_EVENTS.includes(eventType)) {
     console.log('Backup webhook: Unsupported event:', eventType);
     return NextResponse.json({ 
       received: true,
@@ -213,19 +233,19 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
   try {
     switch (eventType) {
       case 'charge.succeeded':
-        return await handleChargeSucceeded(body.data, origin);
+        return await handleChargeSucceeded((body as { data?: ChargePayload }).data || {}, origin);
         
       case 'charge.failed':
-        return await handleChargeFailed(body.data, origin);
+        return await handleChargeFailed((body as { data?: ChargePayload }).data || {}, origin);
         
       case 'charge.expired':
-        return await handleChargeExpired(body.data, origin);
+        return await handleChargeExpired((body as { data?: ChargePayload }).data || {}, origin);
         
       case 'payment_link.paid':
-        return await handlePaymentLinkPaid(body.data, origin);
+        return await handlePaymentLinkPaid((body as { data?: PaymentLinkPayload }).data || {}, origin);
         
       case 'payment_link.expired':
-        return await handlePaymentLinkExpired(body.data, origin);
+        return await handlePaymentLinkExpired((body as { data?: PaymentLinkPayload }).data || {}, origin);
         
       default:
         console.log('Backup webhook: Unhandled event:', eventType);
@@ -240,10 +260,10 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
   }
 }
 
-async function handleChargeSucceeded(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeSucceeded(charge: ChargePayload, origin: string): Promise<NextResponse> {
   console.log('Backup webhook: Payment succeeded for charge:', charge.chargeId);
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'succeeded', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'succeeded', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -258,10 +278,10 @@ async function handleChargeSucceeded(charge: any, origin: string): Promise<NextR
   });
 }
 
-async function handleChargeFailed(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeFailed(charge: ChargePayload, origin: string): Promise<NextResponse> {
   console.log('Backup webhook: Payment failed for charge:', charge.chargeId);
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'failed', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'failed', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -276,10 +296,10 @@ async function handleChargeFailed(charge: any, origin: string): Promise<NextResp
   });
 }
 
-async function handleChargeExpired(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeExpired(charge: ChargePayload, origin: string): Promise<NextResponse> {
   console.log('Backup webhook: Payment expired for charge:', charge.chargeId);
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'expired', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'expired', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -294,11 +314,11 @@ async function handleChargeExpired(charge: any, origin: string): Promise<NextRes
   });
 }
 
-async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<NextResponse> {
+async function handlePaymentLinkPaid(paymentLink: PaymentLinkPayload, origin: string): Promise<NextResponse> {
   console.log('Backup webhook: Payment link paid:', paymentLink.id);
   
-  const chargeId = paymentLink.chargeId || paymentLink.id;
-  const success = await updatePaymentStatus(origin, chargeId, 'succeeded', {
+  const chargeId = paymentLink.chargeId || paymentLink.id || '';
+  const success = await updatePaymentStatus(origin, String(chargeId), 'succeeded', {
     amount: paymentLink.amount,
     paymentMethod: paymentLink.paymentMethod?.type,
     referenceId: paymentLink.referenceId
@@ -313,11 +333,11 @@ async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<
   });
 }
 
-async function handlePaymentLinkExpired(paymentLink: any, origin: string): Promise<NextResponse> {
+async function handlePaymentLinkExpired(paymentLink: PaymentLinkPayload, origin: string): Promise<NextResponse> {
   console.log('Backup webhook: Payment link expired:', paymentLink.id);
   
-  const chargeId = paymentLink.chargeId || paymentLink.id;
-  const success = await updatePaymentStatus(origin, chargeId, 'expired', {
+  const chargeId = paymentLink.chargeId || paymentLink.id || '';
+  const success = await updatePaymentStatus(origin, String(chargeId), 'expired', {
     amount: paymentLink.amount,
     paymentMethod: paymentLink.paymentMethod?.type,
     referenceId: paymentLink.referenceId

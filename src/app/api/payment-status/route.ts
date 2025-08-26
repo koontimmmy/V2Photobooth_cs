@@ -56,7 +56,7 @@ async function fetchBeamCharge(chargeId: string) {
     if (!response.ok) return null;
     const data = await response.json();
     return data;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

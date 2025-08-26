@@ -21,6 +21,23 @@ const WEBHOOK_CONFIG = {
   ] as const
 };
 
+type SupportedEvent = typeof WEBHOOK_CONFIG.SUPPORTED_EVENTS[number];
+
+interface ChargePayload {
+  chargeId?: string;
+  amount?: number;
+  paymentMethod?: { type?: string } | null;
+  referenceId?: string;
+}
+
+interface PaymentLinkPayload {
+  id?: string;
+  chargeId?: string;
+  amount?: number;
+  paymentMethod?: { type?: string } | null;
+  referenceId?: string;
+}
+
 function extractHexSignature(sigRaw: string): string {
   const raw = (sigRaw || '').trim();
   // Formats to support: "hex", "sha256=hex", "v1=hex", or comma-separated list
@@ -86,7 +103,6 @@ function verifyWebhookSignature(
 
     const receivedBuf = Buffer.from(extracted, 'hex');
 
-    // Compare with ascii expected
     let expectedBuf = Buffer.from(expectedHexAscii, 'hex');
     if (receivedBuf.length === expectedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
       return { valid: true };
@@ -112,7 +128,7 @@ async function updatePaymentStatus(
   origin: string,
   chargeId: string,
   status: 'succeeded' | 'failed' | 'expired',
-  additionalData?: Record<string, any>
+  additionalData?: Record<string, unknown>
 ) {
   try {
     const response = await fetch(`${origin}/api/payment-status`, {
@@ -167,7 +183,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Parse payload after verification
-      let body;
+      let body: unknown;
       try {
         body = JSON.parse(payload);
       } catch (parseError) {
@@ -186,7 +202,7 @@ export async function POST(request: NextRequest) {
       // Fallback for development or when signature verification is not configured
       console.warn('Webhook signature verification skipped - missing secret or headers');
       
-      let body;
+      let body: unknown;
       try {
         body = await request.json();
       } catch (parseError) {
@@ -212,14 +228,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processWebhookEvent(body: any, request: NextRequest): Promise<NextResponse> {
-  const eventType = body.type;
+async function processWebhookEvent(body: unknown, request: NextRequest): Promise<NextResponse> {
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
+  const eventType = (body as { type?: string }).type as SupportedEvent | undefined;
   const origin = request.nextUrl.origin;
   
   console.log('Processing webhook event:', eventType);
   
   // Validate event type
-  if (!WEBHOOK_CONFIG.SUPPORTED_EVENTS.includes(eventType)) {
+  if (!eventType || !WEBHOOK_CONFIG.SUPPORTED_EVENTS.includes(eventType)) {
     console.log('Unsupported webhook event:', eventType);
     return NextResponse.json({ 
       received: true,
@@ -231,19 +250,19 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
   try {
     switch (eventType) {
       case 'charge.succeeded':
-        return await handleChargeSucceeded(body.data, origin);
+        return await handleChargeSucceeded((body as { data?: ChargePayload }).data || {});
         
       case 'charge.failed':
-        return await handleChargeFailed(body.data, origin);
+        return await handleChargeFailed((body as { data?: ChargePayload }).data || {});
         
       case 'charge.expired':
-        return await handleChargeExpired(body.data, origin);
+        return await handleChargeExpired((body as { data?: ChargePayload }).data || {});
         
       case 'payment_link.paid':
-        return await handlePaymentLinkPaid(body.data, origin);
+        return await handlePaymentLinkPaid((body as { data?: PaymentLinkPayload }).data || {});
         
       case 'payment_link.expired':
-        return await handlePaymentLinkExpired(body.data, origin);
+        return await handlePaymentLinkExpired((body as { data?: PaymentLinkPayload }).data || {});
         
       default:
         console.log('Unhandled webhook event:', eventType);
@@ -258,10 +277,11 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
   }
 }
 
-async function handleChargeSucceeded(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeSucceeded(charge: ChargePayload): Promise<NextResponse> {
   console.log('Payment succeeded for charge:', charge.chargeId);
+  const origin = process.env.PUBLIC_BASE_URL || '';
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'succeeded', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'succeeded', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -275,10 +295,11 @@ async function handleChargeSucceeded(charge: any, origin: string): Promise<NextR
   });
 }
 
-async function handleChargeFailed(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeFailed(charge: ChargePayload): Promise<NextResponse> {
   console.log('Payment failed for charge:', charge.chargeId);
+  const origin = process.env.PUBLIC_BASE_URL || '';
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'failed', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'failed', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -292,10 +313,11 @@ async function handleChargeFailed(charge: any, origin: string): Promise<NextResp
   });
 }
 
-async function handleChargeExpired(charge: any, origin: string): Promise<NextResponse> {
+async function handleChargeExpired(charge: ChargePayload): Promise<NextResponse> {
   console.log('Payment expired for charge:', charge.chargeId);
+  const origin = process.env.PUBLIC_BASE_URL || '';
   
-  const success = await updatePaymentStatus(origin, charge.chargeId, 'expired', {
+  const success = await updatePaymentStatus(origin, String(charge.chargeId || ''), 'expired', {
     amount: charge.amount,
     paymentMethod: charge.paymentMethod?.type,
     referenceId: charge.referenceId
@@ -309,11 +331,12 @@ async function handleChargeExpired(charge: any, origin: string): Promise<NextRes
   });
 }
 
-async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<NextResponse> {
+async function handlePaymentLinkPaid(paymentLink: PaymentLinkPayload): Promise<NextResponse> {
   console.log('Payment link paid:', paymentLink.id);
+  const origin = process.env.PUBLIC_BASE_URL || '';
   
-  const chargeId = paymentLink.chargeId || paymentLink.id;
-  const success = await updatePaymentStatus(origin, chargeId, 'succeeded', {
+  const chargeId = paymentLink.chargeId || paymentLink.id || '';
+  const success = await updatePaymentStatus(origin, String(chargeId), 'succeeded', {
     amount: paymentLink.amount,
     paymentMethod: paymentLink.paymentMethod?.type,
     referenceId: paymentLink.referenceId
@@ -327,11 +350,12 @@ async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<
   });
 }
 
-async function handlePaymentLinkExpired(paymentLink: any, origin: string): Promise<NextResponse> {
+async function handlePaymentLinkExpired(paymentLink: PaymentLinkPayload): Promise<NextResponse> {
   console.log('Payment link expired:', paymentLink.id);
+  const origin = process.env.PUBLIC_BASE_URL || '';
   
-  const chargeId = paymentLink.chargeId || paymentLink.id;
-  const success = await updatePaymentStatus(origin, chargeId, 'expired', {
+  const chargeId = paymentLink.chargeId || paymentLink.id || '';
+  const success = await updatePaymentStatus(origin, String(chargeId), 'expired', {
     amount: paymentLink.amount,
     paymentMethod: paymentLink.paymentMethod?.type,
     referenceId: paymentLink.referenceId

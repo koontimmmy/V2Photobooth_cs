@@ -3,8 +3,13 @@
 import { useState } from 'react';
 
 export default function WebhookTestPage() {
-  const [testData, setTestData] = useState<any>(null);
-  const [verificationResult, setVerificationResult] = useState<any>(null);
+  const [testData, setTestData] = useState<{
+    payload: string;
+    timestamp: string;
+    signature: string;
+    headers: Record<string, string>;
+  } | null>(null);
+  const [verificationResult, setVerificationResult] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
   const generateTestData = async () => {
@@ -209,7 +214,7 @@ export default function WebhookTestPage() {
         <div className="bg-blue-50 rounded-lg p-6 mt-6">
           <h2 className="text-xl font-semibold text-blue-900 mb-4">📚 How to Use</h2>
           <ol className="list-decimal list-inside space-y-2 text-blue-800">
-            <li>Click "Generate Test Webhook Data" to create test data</li>
+            <li>Click &ldquo;Generate Test Webhook Data&rdquo; to create test data</li>
             <li>Use the generated data to test different webhook endpoints</li>
             <li>Check the results to verify signature verification works</li>
             <li>Use this data to test with external tools like Postman or curl</li>
