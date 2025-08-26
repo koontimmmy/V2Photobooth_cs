@@ -1,29 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 
-// Webhook configuration
+// Backup webhook configuration
 const WEBHOOK_CONFIG = {
   SIGNATURE_HEADER: 'x-beam-signature',
   TIMESTAMP_HEADER: 'x-beam-timestamp',
-  TOLERANCE_SECONDS: 300, // 5 minutes tolerance for timestamp
+  TOLERANCE_SECONDS: 300,
   SUPPORTED_EVENTS: [
     'charge.succeeded',
     'charge.failed',
     'charge.expired',
     'payment_link.paid',
     'payment_link.expired'
-  ] as const,
-  // รองรับหลาย webhook endpoints
-  WEBHOOK_ENDPOINTS: [
-    '/api/webhook',           // Main webhook
-    '/api/webhook/backup',    // Backup webhook
-    '/api/webhook/staging'    // Staging webhook
   ] as const
 };
 
 function extractHexSignature(sigRaw: string): string {
   const raw = (sigRaw || '').trim();
-  // Formats to support: "hex", "sha256=hex", "v1=hex", or comma-separated list
   const parts = raw.split(',');
   for (const p of parts) {
     const [k, v] = p.split('=');
@@ -40,7 +33,6 @@ function isValidHex64(str: string): boolean {
 
 function tryDecodeBase64(input: string): Buffer | null {
   try {
-    // Heuristic: if base64-like, try decode
     if (/^[A-Za-z0-9+/=]+$/.test(input) && input.length % 4 === 0) {
       const buf = Buffer.from(input, 'base64');
       return buf.length ? buf : null;
@@ -64,7 +56,6 @@ function verifyWebhookSignature(
       return { valid: false, reason: 'invalid_signature_format' };
     }
 
-    // Check timestamp tolerance
     const now = Math.floor(Date.now() / 1000);
     const webhookTimestamp = parseInt(timestamp, 10);
     if (!Number.isFinite(webhookTimestamp)) {
@@ -78,21 +69,17 @@ function verifyWebhookSignature(
       .update(`${timestamp}.${payload}`)
       .digest('hex');
 
-    // Compute with ascii secret first
     const expectedHexAscii = makeExpectedHex(secret);
-    // Optionally compute with base64-decoded secret if looks like base64
     const decoded = tryDecodeBase64(secret);
     const expectedHexB64 = decoded ? makeExpectedHex(decoded) : null;
 
     const receivedBuf = Buffer.from(extracted, 'hex');
 
-    // Compare with ascii expected
     let expectedBuf = Buffer.from(expectedHexAscii, 'hex');
     if (receivedBuf.length === expectedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
       return { valid: true };
     }
 
-    // Compare with base64-decoded expected if available
     if (expectedHexB64) {
       expectedBuf = Buffer.from(expectedHexB64, 'hex');
       if (receivedBuf.length === expectedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
@@ -102,7 +89,7 @@ function verifyWebhookSignature(
 
     return { valid: false, reason: 'mismatch' };
   } catch (error) {
-    console.error('Signature verification error:', error);
+    console.error('Backup webhook signature verification error:', error);
     return { valid: false, reason: 'exception' };
   }
 }
@@ -127,7 +114,7 @@ async function updatePaymentStatus(
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('Failed to update payment status:', {
+      console.error('Backup webhook failed to update payment status:', {
         chargeId,
         status,
         responseStatus: response.status,
@@ -136,77 +123,72 @@ async function updatePaymentStatus(
       return false;
     }
     
-    console.log(`Payment status updated successfully: ${chargeId} -> ${status}`);
+    console.log(`Backup webhook: Payment status updated successfully: ${chargeId} -> ${status}`);
     return true;
   } catch (error) {
-    console.error('Error updating payment status:', error);
+    console.error('Backup webhook error updating payment status:', error);
     return false;
   }
 }
 
 export async function POST(request: NextRequest) {
-  console.log('🔔 Webhook received at:', new Date().toISOString());
+  console.log('🔔 Backup Webhook received at:', new Date().toISOString());
   
   try {
-    // Get webhook signature and timestamp
     const signatureHeader = request.headers.get(WEBHOOK_CONFIG.SIGNATURE_HEADER) || '';
     const timestampHeader = request.headers.get(WEBHOOK_CONFIG.TIMESTAMP_HEADER) || '';
     
-    // Verify webhook signature if secret is configured
     const webhookSecret = process.env.BEAM_WEBHOOK_SECRET;
     if (webhookSecret && signatureHeader && timestampHeader) {
       const payload = await request.text();
       const verification = verifyWebhookSignature(payload, signatureHeader, timestampHeader, webhookSecret);
       
       if (!verification.valid) {
-        console.error('Invalid webhook signature', verification);
+        console.error('Backup webhook: Invalid signature', verification);
         return NextResponse.json({ 
           error: 'Invalid signature',
-          details: verification.reason || 'Webhook signature verification failed'
+          details: verification.reason || 'Backup webhook signature verification failed'
         }, { status: 401 });
       }
       
-      // Parse payload after verification
       let body;
       try {
         body = JSON.parse(payload);
       } catch (parseError) {
-        console.error('Failed to parse webhook payload:', parseError);
+        console.error('Backup webhook: Failed to parse payload:', parseError);
         return NextResponse.json({
           error: 'Invalid payload',
-          details: 'Webhook payload is not valid JSON'
+          details: 'Backup webhook payload is not valid JSON'
         }, { status: 400 });
       }
       
-      console.log('Webhook payload verified:', JSON.stringify(body, null, 2));
+      console.log('Backup webhook payload verified:', JSON.stringify(body, null, 2));
       
       // Process webhook event
       return await processWebhookEvent(body, request);
     } else {
-      // Fallback for development or when signature verification is not configured
-      console.warn('Webhook signature verification skipped - missing secret or headers');
+      console.warn('Backup webhook: Signature verification skipped');
       
       let body;
       try {
         body = await request.json();
       } catch (parseError) {
-        console.error('Failed to parse webhook payload:', parseError);
+        console.error('Backup webhook: Failed to parse payload:', parseError);
         return NextResponse.json({
           error: 'Invalid payload',
-          details: 'Webhook payload is not valid JSON'
+          details: 'Backup webhook payload is not valid JSON'
         }, { status: 400 });
       }
       
-      console.log('Webhook payload (unverified):', JSON.stringify(body, null, 2));
+      console.log('Backup webhook payload (unverified):', JSON.stringify(body, null, 2));
       
-      // Process webhook event
       return await processWebhookEvent(body, request);
     }
     
   } catch (error) {
-    console.error('Webhook processing error:', error);
+    console.error('Backup webhook processing error:', error);
     return NextResponse.json({
-      error: 'Webhook processing failed',
+      error: 'Backup webhook processing failed',
       details: 'Internal server error'
     }, { status: 500 });
   }
@@ -216,15 +198,15 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
   const eventType = body.type;
   const origin = request.nextUrl.origin;
   
-  console.log('Processing webhook event:', eventType);
+  console.log('Backup webhook processing event:', eventType);
   
-  // Validate event type
   if (!WEBHOOK_CONFIG.SUPPORTED_EVENTS.includes(eventType)) {
-    console.log('Unsupported webhook event:', eventType);
+    console.log('Backup webhook: Unsupported event:', eventType);
     return NextResponse.json({ 
       received: true,
       event: eventType,
-      message: 'Event type not supported'
+      message: 'Event type not supported by backup webhook',
+      endpoint: 'backup'
     });
   }
   
@@ -246,20 +228,20 @@ async function processWebhookEvent(body: any, request: NextRequest): Promise<Nex
         return await handlePaymentLinkExpired(body.data, origin);
         
       default:
-        console.log('Unhandled webhook event:', eventType);
-        return NextResponse.json({ received: true });
+        console.log('Backup webhook: Unhandled event:', eventType);
+        return NextResponse.json({ received: true, endpoint: 'backup' });
     }
   } catch (error) {
-    console.error(`Error processing ${eventType} event:`, error);
+    console.error(`Backup webhook error processing ${eventType}:`, error);
     return NextResponse.json({
       error: 'Event processing failed',
-      details: 'Failed to process webhook event'
+      details: 'Backup webhook failed to process event'
     }, { status: 500 });
   }
 }
 
 async function handleChargeSucceeded(charge: any, origin: string): Promise<NextResponse> {
-  console.log('Payment succeeded for charge:', charge.chargeId);
+  console.log('Backup webhook: Payment succeeded for charge:', charge.chargeId);
   
   const success = await updatePaymentStatus(origin, charge.chargeId, 'succeeded', {
     amount: charge.amount,
@@ -271,12 +253,13 @@ async function handleChargeSucceeded(charge: any, origin: string): Promise<NextR
     received: true,
     event: 'charge.succeeded',
     chargeId: charge.chargeId,
-    statusUpdated: success
+    statusUpdated: success,
+    endpoint: 'backup'
   });
 }
 
 async function handleChargeFailed(charge: any, origin: string): Promise<NextResponse> {
-  console.log('Payment failed for charge:', charge.chargeId);
+  console.log('Backup webhook: Payment failed for charge:', charge.chargeId);
   
   const success = await updatePaymentStatus(origin, charge.chargeId, 'failed', {
     amount: charge.amount,
@@ -288,12 +271,13 @@ async function handleChargeFailed(charge: any, origin: string): Promise<NextResp
     received: true,
     event: 'charge.failed',
     chargeId: charge.chargeId,
-    statusUpdated: success
+    statusUpdated: success,
+    endpoint: 'backup'
   });
 }
 
 async function handleChargeExpired(charge: any, origin: string): Promise<NextResponse> {
-  console.log('Payment expired for charge:', charge.chargeId);
+  console.log('Backup webhook: Payment expired for charge:', charge.chargeId);
   
   const success = await updatePaymentStatus(origin, charge.chargeId, 'expired', {
     amount: charge.amount,
@@ -305,12 +289,13 @@ async function handleChargeExpired(charge: any, origin: string): Promise<NextRes
     received: true,
     event: 'charge.expired',
     chargeId: charge.chargeId,
-    statusUpdated: success
+    statusUpdated: success,
+    endpoint: 'backup'
   });
 }
 
 async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<NextResponse> {
-  console.log('Payment link paid:', paymentLink.id);
+  console.log('Backup webhook: Payment link paid:', paymentLink.id);
   
   const chargeId = paymentLink.chargeId || paymentLink.id;
   const success = await updatePaymentStatus(origin, chargeId, 'succeeded', {
@@ -323,12 +308,13 @@ async function handlePaymentLinkPaid(paymentLink: any, origin: string): Promise<
     received: true,
     event: 'payment_link.paid',
     chargeId,
-    statusUpdated: success
+    statusUpdated: success,
+    endpoint: 'backup'
   });
 }
 
 async function handlePaymentLinkExpired(paymentLink: any, origin: string): Promise<NextResponse> {
-  console.log('Payment link expired:', paymentLink.id);
+  console.log('Backup webhook: Payment link expired:', paymentLink.id);
   
   const chargeId = paymentLink.chargeId || paymentLink.id;
   const success = await updatePaymentStatus(origin, chargeId, 'expired', {
@@ -341,6 +327,7 @@ async function handlePaymentLinkExpired(paymentLink: any, origin: string): Promi
     received: true,
     event: 'payment_link.expired',
     chargeId,
-    statusUpdated: success
+    statusUpdated: success,
+    endpoint: 'backup'
   });
 }
