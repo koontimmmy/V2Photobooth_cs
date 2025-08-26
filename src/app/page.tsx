@@ -22,10 +22,16 @@ export default function Home() {
   const [qrCodeData, setQrCodeData] = useState<string>("");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentTimeout, setPaymentTimeout] = useState(0);
+  
+  // Photo gallery states
+  const [showGallery, setShowGallery] = useState(false);
+  const [savedPhotos, setSavedPhotos] = useState<string[]>([]);
 
   // Auto start camera on mount
   useEffect(() => {
     startCamera();
+    // โหลดรูปที่บันทึกไว้จาก local storage
+    loadSavedPhotos();
   }, []);
 
   // -------- Camera Control ----------
@@ -107,6 +113,9 @@ export default function Home() {
       const dataURL = canvas.toDataURL("image/png");
       setCapturedImageData(dataURL);
       setShowImage(true);
+      
+      // บันทึกรูปลง local storage
+      savePhotoToStorage(dataURL);
       
       // ป้องกันการพิมพ์ซ้ำด้วย useRef
       if (!isPrintingRef.current) {
@@ -386,6 +395,16 @@ export default function Home() {
               WeChat Pay
             </button>
           </div>
+          
+          {/* Gallery Button */}
+          {savedPhotos.length > 0 && (
+            <button
+              onClick={() => setShowGallery(true)}
+              className="mt-8 px-8 py-4 bg-blue-600 text-white rounded-lg font-bold text-xl hover:bg-blue-700 flex items-center"
+            >
+              📸 ดูรูปที่บันทึกไว้ ({savedPhotos.length})
+            </button>
+          )}
         </div>
       ) : !showPayment ? (
         // Photo Control
@@ -456,6 +475,75 @@ export default function Home() {
 
       {error && (
         <p className="text-red-600 mt-4 text-center max-w-md">{error}</p>
+      )}
+
+      {/* Gallery Modal */}
+      {showGallery && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold">📸 รูปที่บันทึกไว้</h2>
+              <button
+                onClick={() => setShowGallery(false)}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              >
+                ✕ ปิด
+              </button>
+            </div>
+            
+            {savedPhotos.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">ยังไม่มีรูปที่บันทึกไว้</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {savedPhotos.map((photo: any, index: number) => (
+                  <div key={photo.id} className="relative group">
+                    <img
+                      src={photo.data}
+                      alt={`Photo ${index + 1}`}
+                      className="w-full h-48 object-cover rounded-lg border-2 border-gray-200"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setCapturedImageData(photo.data);
+                            setShowImage(true);
+                            setShowGallery(false);
+                          }}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                        >
+                          👁️ ดู
+                        </button>
+                        <button
+                          onClick={() => {
+                            autoPrint(photo.data);
+                            setShowGallery(false);
+                          }}
+                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                        >
+                          🖨️ พิมพ์
+                        </button>
+                        <button
+                          onClick={() => {
+                            const updatedPhotos = savedPhotos.filter((p: any) => p.id !== photo.id);
+                            setSavedPhotos(updatedPhotos);
+                            localStorage.setItem('photobooth_photos', JSON.stringify(updatedPhotos));
+                          }}
+                          className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+                        >
+                          🗑️ ลบ
+                        </button>
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs">
+                      {new Date(photo.timestamp).toLocaleString('th-TH')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -618,4 +706,41 @@ const browserPrint = (dataURL: string) => {
     }
   });
 };
+
+  // โหลดรูปที่บันทึกไว้จาก local storage
+  const loadSavedPhotos = () => {
+    try {
+      const saved = localStorage.getItem('photobooth_photos');
+      if (saved) {
+        const photos = JSON.parse(saved);
+        setSavedPhotos(photos);
+        console.log('📸 Loaded saved photos:', photos.length);
+      }
+    } catch (error) {
+      console.error('❌ Error loading saved photos:', error);
+    }
+  };
+
+  // บันทึกรูปลง local storage
+  const savePhotoToStorage = (imageData: string) => {
+    try {
+      const timestamp = Date.now();
+      const photoData = {
+        id: timestamp,
+        data: imageData,
+        timestamp: timestamp
+      };
+      
+      // เพิ่มรูปใหม่เข้าไปใน array
+      const updatedPhotos = [photoData, ...savedPhotos.slice(0, 9)]; // เก็บแค่ 10 รูปล่าสุด
+      setSavedPhotos(updatedPhotos);
+      
+      // บันทึกลง local storage
+      localStorage.setItem('photobooth_photos', JSON.stringify(updatedPhotos));
+      
+      console.log('💾 Photo saved to local storage, total photos:', updatedPhotos.length);
+    } catch (error) {
+      console.error('❌ Error saving photo:', error);
+    }
+  };
 
