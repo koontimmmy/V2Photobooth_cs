@@ -467,7 +467,7 @@ const autoPrint = async (dataURL: string) => {
     console.log(`🖨️ autoPrint called! ID: ${printId} - Using browser printing directly...`);
     
     // ใช้ browser printing โดยตรงแทนการเรียก backend
-    browserPrint(dataURL);
+    await browserPrint(dataURL);
     
   } catch (error) {
     console.error('❌ Print error:', error);
@@ -478,114 +478,181 @@ const autoPrint = async (dataURL: string) => {
 
 // Fallback browser printing function
 const browserPrint = (dataURL: string) => {
-  console.log('🌐 browserPrint called!');
-  
-  // สร้าง print window ที่ดีขึ้น
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
-  if (printWindow) {
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Photo - Photobooth</title>
-          <style>
-            @page { 
-              size: A4 portrait; 
-              margin: 0; 
-            }
-            body { 
-              margin: 0; 
-              padding: 0; 
-              font-family: Arial, sans-serif;
-              background: white;
-            }
-            .print-container {
-              width: 100%;
-              height: 100vh;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-            }
-            .photo {
-              max-width: 100%;
-              max-height: 90vh;
-              object-fit: contain;
-              box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            }
-            .print-info {
-              margin-top: 20px;
-              text-align: center;
-              color: #333;
-            }
-            .print-button {
-              margin-top: 20px;
-              padding: 10px 20px;
-              background: #007bff;
-              color: white;
-              border: none;
-              border-radius: 5px;
-              cursor: pointer;
-              font-size: 16px;
-            }
-            .print-button:hover {
-              background: #0056b3;
-            }
-            @media print {
-              .print-button { display: none; }
-              .print-info { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            <img src="${dataURL}" class="photo" alt="Photobooth Photo" />
-            <div class="print-info">
-              <h3>📸 Photobooth Photo</h3>
-              <p>Ready to print</p>
-              <button class="print-button" onclick="window.print()">🖨️ Print Now</button>
-            </div>
-          </div>
-          <script>
-            // Auto-print after 1 second
-            setTimeout(() => { 
-              window.focus(); 
-              window.print(); 
-            }, 1000);
-            
-            // Close window after printing (with delay)
-            window.addEventListener('afterprint', () => {
-              setTimeout(() => window.close(), 2000);
-            });
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  } else {
-    // Fallback: ใช้ window.print() โดยตรง
-    console.log('🔄 Using direct window.print() as fallback');
+  return new Promise((resolve, reject) => {
+    console.log('🌐 browserPrint called!');
     
-    // สร้าง temporary image element
-    const tempImg = document.createElement('img');
-    tempImg.src = dataURL;
-    tempImg.style.position = 'fixed';
-    tempImg.style.top = '0';
-    tempImg.style.left = '0';
-    tempImg.style.width = '100%';
-    tempImg.style.height = '100%';
-    tempImg.style.objectFit = 'contain';
-    tempImg.style.zIndex = '9999';
-    tempImg.style.background = 'white';
-    
-    document.body.appendChild(tempImg);
-    
-    // Print และลบ element
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.removeChild(tempImg);
-      }, 1000);
-    }, 500);
-  }
+    try {
+      // สร้าง print window ที่ดีขึ้น
+      const printWindow = window.open('', '_blank', 'width=800,height=600');
+      
+      if (printWindow) {
+        console.log('✅ Print window opened successfully');
+        
+        // รอให้ window พร้อมก่อน
+        printWindow.onload = () => {
+          console.log('✅ Print window loaded, preparing content...');
+          
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Print Photo - Photobooth</title>
+                <style>
+                  @page { 
+                    size: A4 portrait; 
+                    margin: 0; 
+                  }
+                  body { 
+                    margin: 0; 
+                    padding: 0; 
+                    font-family: Arial, sans-serif;
+                    background: white;
+                  }
+                  .print-container {
+                    width: 100%;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                  }
+                  .photo {
+                    max-width: 100%;
+                    max-height: 90vh;
+                    object-fit: contain;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                  }
+                  .print-info {
+                    margin-top: 20px;
+                    text-align: center;
+                    color: #333;
+                  }
+                  .print-button {
+                    margin-top: 20px;
+                    padding: 10px 20px;
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-size: 16px;
+                  }
+                  .print-button:hover {
+                    background: #0056b3;
+                  }
+                  @media print {
+                    .print-button { display: none; }
+                    .print-info { display: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="print-container">
+                  <img src="${dataURL}" class="photo" alt="Photobooth Photo" onload="console.log('Image loaded successfully')" />
+                  <div class="print-info">
+                    <h3>📸 Photobooth Photo</h3>
+                    <p>Ready to print</p>
+                    <button class="print-button" onclick="window.print()">🖨️ Print Now</button>
+                  </div>
+                </div>
+                <script>
+                  console.log('Print window script loaded');
+                  
+                  // รอให้รูปโหลดเสร็จก่อนพิมพ์
+                  window.addEventListener('load', () => {
+                    console.log('Window fully loaded, starting auto-print...');
+                    
+                    // Auto-print after 2 seconds (ให้รูปโหลดเสร็จ)
+                    setTimeout(() => { 
+                      console.log('🖨️ Auto-printing now...');
+                      window.focus(); 
+                      window.print(); 
+                    }, 2000);
+                  });
+                  
+                  // ปิด window หลังพิมพ์เสร็จ
+                  window.addEventListener('afterprint', () => {
+                    console.log('Print completed, closing window...');
+                    setTimeout(() => window.close(), 3000);
+                  });
+                  
+                  // Fallback: ปิด window หลัง 10 วินาทีถ้าไม่มีการพิมพ์
+                  setTimeout(() => {
+                    if (!window.closed) {
+                      console.log('Fallback: closing window after timeout');
+                      window.close();
+                    }
+                  }, 10000);
+                </script>
+              </body>
+            </html>
+          `);
+          
+          printWindow.document.close();
+          console.log('✅ Print content written to window');
+          
+          // Resolve promise หลังจาก window พร้อม
+          setTimeout(() => {
+            console.log('✅ Print window ready, resolving promise');
+            resolve(true);
+          }, 1000);
+        };
+        
+        // Error handling
+        printWindow.onerror = (error) => {
+          console.error('❌ Print window error:', error);
+          reject(error);
+        };
+        
+      } else {
+        console.log('🔄 Using direct window.print() as fallback');
+        
+        // สร้าง temporary image element
+        const tempImg = document.createElement('img');
+        tempImg.src = dataURL;
+        tempImg.style.position = 'fixed';
+        tempImg.style.top = '0';
+        tempImg.style.left = '0';
+        tempImg.style.width = '100%';
+        tempImg.style.height = '100%';
+        tempImg.style.objectFit = 'contain';
+        tempImg.style.zIndex = '9999';
+        tempImg.style.background = 'white';
+        
+        document.body.appendChild(tempImg);
+        
+        // รอให้รูปโหลดเสร็จก่อนพิมพ์
+        tempImg.onload = () => {
+          console.log('✅ Fallback image loaded, printing...');
+          
+          setTimeout(() => {
+            try {
+              window.print();
+              console.log('✅ Fallback print initiated');
+              
+              setTimeout(() => {
+                document.body.removeChild(tempImg);
+                console.log('✅ Fallback image element cleaned up');
+                resolve(true);
+              }, 2000);
+            } catch (printError) {
+              console.error('❌ Fallback print error:', printError);
+              document.body.removeChild(tempImg);
+              reject(printError);
+            }
+          }, 1000);
+        };
+        
+        tempImg.onerror = (error) => {
+          console.error('❌ Fallback image load error:', error);
+          document.body.removeChild(tempImg);
+          reject(error);
+        };
+      }
+      
+    } catch (error) {
+      console.error('❌ Browser print error:', error);
+      reject(error);
+    }
+  });
 };
 
