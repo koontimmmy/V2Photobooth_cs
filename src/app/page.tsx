@@ -482,106 +482,135 @@ const browserPrint = (dataURL: string) => {
     console.log('🌐 browserPrint called! - Silent printing mode');
     
     try {
-      // ใช้วิธี silent printing โดยไม่เปิด print dialog
-      console.log('🖨️ Attempting silent print...');
+      // ใช้วิธีสร้าง iframe ที่ซ่อนไว้สำหรับพิมพ์
+      console.log('🖨️ Creating hidden print iframe...');
       
-      // สร้าง temporary image element ที่ซ่อนไว้
-      const tempImg = document.createElement('img');
-      tempImg.src = dataURL;
-      tempImg.style.position = 'fixed';
-      tempImg.style.top = '0';
-      tempImg.style.left = '0';
-      tempImg.style.width = '100%';
-      tempImg.style.height = '100%';
-      tempImg.style.objectFit = 'contain';
-      tempImg.style.zIndex = '9999';
-      tempImg.style.background = 'white';
-      tempImg.style.opacity = '0'; // ซ่อนรูปไว้
+      const printFrame = document.createElement('iframe');
+      printFrame.style.position = 'fixed';
+      printFrame.style.top = '0';
+      printFrame.style.left = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = 'none';
+      printFrame.style.overflow = 'hidden';
       
-      document.body.appendChild(tempImg);
+      document.body.appendChild(printFrame);
       
-      // รอให้รูปโหลดเสร็จแล้วพิมพ์ทันที
-      tempImg.onload = () => {
-        console.log('✅ Image loaded, printing silently...');
-        
-        // ลองใช้วิธีพิมพ์แบบ silent
+      printFrame.onload = () => {
         try {
-          // วิธีที่ 1: ใช้ print() โดยตรง
-          window.print();
-          console.log('✅ Silent print initiated');
+          console.log('✅ Print iframe loaded, preparing content...');
           
-          // ลบ element หลังพิมพ์เสร็จ
+          // สร้าง HTML content ที่เหมาะสมสำหรับการพิมพ์ A4
+          const printContent = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Photobooth Print</title>
+                <style>
+                  @page {
+                    size: A4 portrait;
+                    margin: 0;
+                  }
+                  
+                  body {
+                    margin: 0;
+                    padding: 0;
+                    width: 210mm;
+                    height: 297mm;
+                    background: white;
+                    font-family: Arial, sans-serif;
+                  }
+                  
+                  .print-container {
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    position: relative;
+                  }
+                  
+                  .photo {
+                    max-width: 180mm;
+                    max-height: 250mm;
+                    object-fit: contain;
+                    display: block;
+                  }
+                  
+                  .photo-container {
+                    width: 180mm;
+                    height: 250mm;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: white;
+                    border: 1px solid #ddd;
+                  }
+                  
+                  @media print {
+                    body { margin: 0; }
+                    .photo-container { border: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="print-container">
+                  <div class="photo-container">
+                    <img src="${dataURL}" class="photo" alt="Photobooth Photo" />
+                  </div>
+                </div>
+                <script>
+                  console.log('Print content ready, starting print...');
+                  
+                  // รอให้รูปโหลดเสร็จแล้วพิมพ์
+                  const img = document.querySelector('.photo');
+                  img.onload = () => {
+                    console.log('Image loaded, printing now...');
+                    setTimeout(() => {
+                      window.print();
+                    }, 500);
+                  };
+                  
+                  // ปิด iframe หลังพิมพ์เสร็จ
+                  window.addEventListener('afterprint', () => {
+                    console.log('Print completed');
+                    setTimeout(() => {
+                      window.close();
+                    }, 1000);
+                  });
+                  
+                  // Fallback: ปิดหลัง 5 วินาที
+                  setTimeout(() => {
+                    if (!window.closed) {
+                      console.log('Fallback: closing iframe');
+                      window.close();
+                    }
+                  }, 5000);
+                </script>
+              </body>
+            </html>
+          `;
+          
+          printFrame.contentWindow?.document.write(printContent);
+          printFrame.contentWindow?.document.close();
+          
+          console.log('✅ Print content written, waiting for image load...');
+          
+          // Resolve promise หลังจาก content พร้อม
           setTimeout(() => {
-            document.body.removeChild(tempImg);
-            console.log('✅ Image element cleaned up');
+            console.log('✅ Print iframe ready');
             resolve(true);
-          }, 3000);
+          }, 1000);
           
-        } catch (printError) {
-          console.log('⚠️ Silent print failed, trying alternative method...');
-          
-          // วิธีที่ 2: ใช้ iframe สำหรับพิมพ์
-          const printFrame = document.createElement('iframe');
-          printFrame.style.position = 'fixed';
-          printFrame.style.top = '0';
-          printFrame.style.left = '0';
-          printFrame.style.width = '0';
-          printFrame.style.height = '0';
-          printFrame.style.border = 'none';
-          
-          document.body.appendChild(printFrame);
-          
-          printFrame.onload = () => {
-            try {
-              printFrame.contentWindow?.document.write(`
-                <html>
-                  <head>
-                    <title>Print Photo</title>
-                    <style>
-                      @page { size: A4 portrait; margin: 0; }
-                      body { margin: 0; padding: 0; }
-                      img { width: 100%; height: auto; display: block; }
-                    </style>
-                  </head>
-                  <body>
-                    <img src="${dataURL}" />
-                  </body>
-                </html>
-              `);
-              
-              printFrame.contentWindow?.document.close();
-              
-              // พิมพ์ทันที
-              setTimeout(() => {
-                printFrame.contentWindow?.print();
-                console.log('✅ Iframe print completed');
-                
-                // ลบ elements
-                setTimeout(() => {
-                  document.body.removeChild(printFrame);
-                  document.body.removeChild(tempImg);
-                  console.log('✅ All elements cleaned up');
-                  resolve(true);
-                }, 2000);
-              }, 500);
-              
-            } catch (iframeError) {
-              console.error('❌ Iframe print error:', iframeError);
-              document.body.removeChild(printFrame);
-              document.body.removeChild(tempImg);
-              reject(iframeError);
-            }
-          };
-          
-          printFrame.src = 'about:blank';
+        } catch (iframeError) {
+          console.error('❌ Iframe content error:', iframeError);
+          document.body.removeChild(printFrame);
+          reject(iframeError);
         }
       };
       
-      tempImg.onerror = (error) => {
-        console.error('❌ Image load error:', error);
-        document.body.removeChild(tempImg);
-        reject(error);
-      };
+      // เริ่มโหลด iframe
+      printFrame.src = 'about:blank';
       
     } catch (error) {
       console.error('❌ Browser print error:', error);
