@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 type SupportedEvent = 'charge.succeeded' | 'charge.failed' | 'charge.expired' | 'payment_link.paid' | 'payment_link.expired';
 
@@ -93,13 +93,13 @@ function verifyWebhookSignature(
     const receivedBuf = Buffer.from(extracted, 'hex');
 
     let expectedBuf = Buffer.from(expectedHexAscii, 'hex');
-    if (receivedBuf.length === expectedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
+    if (receivedBuf.length === expectedBuf.length && timingSafeEqual(receivedBuf, expectedBuf)) {
       return { valid: true };
     }
 
     if (expectedHexB64) {
       expectedBuf = Buffer.from(expectedHexB64, 'hex');
-      if (receivedBuf.length === expectedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
+      if (receivedBuf.length === expectedBuf.length && timingSafeEqual(receivedBuf, expectedBuf)) {
         return { valid: true };
       }
     }
