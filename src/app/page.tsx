@@ -25,13 +25,13 @@ export default function Home() {
   
   // Photo gallery states
   const [showGallery, setShowGallery] = useState(false);
-  const [savedPhotos, setSavedPhotos] = useState<string[]>([]);
+  const [savedPhotos, setSavedPhotos] = useState<Array<{id: number, data: string, timestamp: number}>>([]);
 
   // Auto start camera on mount
   useEffect(() => {
     startCamera();
     // โหลดรูปที่บันทึกไว้จาก local storage
-    loadSavedPhotos();
+    loadSavedPhotos(setSavedPhotos);
   }, []);
 
   // -------- Camera Control ----------
@@ -115,7 +115,7 @@ export default function Home() {
       setShowImage(true);
       
       // บันทึกรูปลง local storage
-      savePhotoToStorage(dataURL);
+      savePhotoToStorage(dataURL, savedPhotos, setSavedPhotos);
       
       // ป้องกันการพิมพ์ซ้ำด้วย useRef
       if (!isPrintingRef.current) {
@@ -548,199 +548,224 @@ export default function Home() {
     </div>
   );
 }
+
 // Backend Auto Print Function
 const autoPrint = async (dataURL: string) => {
-  const printId = Date.now();
+    const printId = Date.now();
+    try {
+      console.log(`🖨️ autoPrint called! ID: ${printId} - Calling print API...`);
+      
+      // เรียก API endpoint สำหรับพิมพ์
+      const response = await fetch('/api/print', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageData: dataURL,
+          printId: printId
+        })
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log('✅ Print API success:', result);
+        console.log(`🖨️ Print job sent: ${result.message}`);
+      } else {
+        console.error('❌ Print API failed:', result);
+        console.log('🔄 Falling back to browser printing...');
+        await browserPrint(dataURL);
+      }
+      
+    } catch (error) {
+      console.error('❌ Print API error:', error);
+      console.log('🔄 Attempting browser fallback...');
+      browserPrint(dataURL);
+    }
+  };
+
+  // Fallback browser printing function
+  const browserPrint = (dataURL: string) => {
+    return new Promise((resolve, reject) => {
+      console.log('🌐 browserPrint called! - Silent printing mode');
+      
+      try {
+        // ใช้วิธีสร้าง iframe ที่ซ่อนไว้สำหรับพิมพ์
+        console.log('🖨️ Creating hidden print iframe...');
+        
+        const printFrame = document.createElement('iframe');
+        printFrame.style.position = 'fixed';
+        printFrame.style.top = '0';
+        printFrame.style.left = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = 'none';
+        printFrame.style.overflow = 'hidden';
+        
+        document.body.appendChild(printFrame);
+        
+        printFrame.onload = () => {
+          try {
+            console.log('✅ Print iframe loaded, preparing content...');
+            
+            // สร้าง HTML content ที่เหมาะสมสำหรับการพิมพ์ A4
+            const printContent = `
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <title>Photobooth Print</title>
+                  <style>
+                    @page {
+                      size: A4 portrait;
+                      margin: 0;
+                    }
+                    
+                    body {
+                      margin: 0;
+                      padding: 0;
+                      width: 210mm;
+                      height: 297mm;
+                      background: white;
+                      font-family: Arial, sans-serif;
+                    }
+                    
+                    .print-container {
+                      width: 100%;
+                      height: 100%;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      position: relative;
+                    }
+                    
+                    .photo {
+                      max-width: 180mm;
+                      max-height: 250mm;
+                      object-fit: contain;
+                      display: block;
+                    }
+                    
+                    .photo-container {
+                      width: 180mm;
+                      height: 250mm;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      background: white;
+                      border: 1px solid #ddd;
+                    }
+                    
+                    @media print {
+                      body { margin: 0; }
+                      .photo-container { border: none; }
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="print-container">
+                    <div class="photo-container">
+                      <img src="${dataURL}" class="photo" alt="Photobooth Photo" />
+                    </div>
+                  </div>
+                  <script>
+                    console.log('Print content ready, starting print...');
+                    
+                    // รอให้รูปโหลดเสร็จแล้วพิมพ์
+                    const img = document.querySelector('.photo');
+                    img.onload = () => {
+                      console.log('Image loaded, printing now...');
+                      setTimeout(() => {
+                        window.print();
+                      }, 500);
+                    };
+                    
+                    // ปิด iframe หลังพิมพ์เสร็จ
+                    window.addEventListener('afterprint', () => {
+                      console.log('Print completed');
+                      setTimeout(() => {
+                        window.close();
+                      }, 1000);
+                    });
+                    
+                    // Fallback: ปิดหลัง 5 วินาที
+                    setTimeout(() => {
+                      if (!window.closed) {
+                        console.log('Fallback: closing iframe');
+                        window.close();
+                      }
+                    }, 5000);
+                  </script>
+                </body>
+              </html>
+            `;
+            
+            printFrame.contentWindow?.document.write(printContent);
+            printFrame.contentWindow?.document.close();
+            
+            console.log('✅ Print content written, waiting for image load...');
+            
+            // Resolve promise หลังจาก content พร้อม
+            setTimeout(() => {
+              console.log('✅ Print iframe ready');
+              resolve(true);
+            }, 1000);
+            
+          } catch (iframeError) {
+            console.error('❌ Iframe content error:', iframeError);
+            document.body.removeChild(printFrame);
+            reject(iframeError);
+          }
+        };
+        
+        // เริ่มโหลด iframe
+        printFrame.src = 'about:blank';
+        
+      } catch (error) {
+        console.error('❌ Browser print error:', error);
+        reject(error);
+      }
+    });
+  };
+
+// โหลดรูปที่บันทึกไว้จาก local storage
+const loadSavedPhotos = (setSavedPhotos: React.Dispatch<React.SetStateAction<Array<{id: number, data: string, timestamp: number}>>>) => {
   try {
-    console.log(`🖨️ autoPrint called! ID: ${printId} - Using browser printing directly...`);
-    
-    // ใช้ browser printing โดยตรงแทนการเรียก backend
-    await browserPrint(dataURL);
-    
+    const saved = localStorage.getItem('photobooth_photos');
+    if (saved) {
+      const photos = JSON.parse(saved);
+      setSavedPhotos(photos);
+      console.log('📸 Loaded saved photos:', photos.length);
+    }
   } catch (error) {
-    console.error('❌ Print error:', error);
-    console.log('🔄 Attempting browser fallback...');
-    browserPrint(dataURL);
+    console.error('❌ Error loading saved photos:', error);
   }
 };
 
-// Fallback browser printing function
-const browserPrint = (dataURL: string) => {
-  return new Promise((resolve, reject) => {
-    console.log('🌐 browserPrint called! - Silent printing mode');
+// บันทึกรูปลง local storage
+const savePhotoToStorage = (
+  imageData: string, 
+  savedPhotos: Array<{id: number, data: string, timestamp: number}>,
+  setSavedPhotos: React.Dispatch<React.SetStateAction<Array<{id: number, data: string, timestamp: number}>>>
+) => {
+  try {
+    const timestamp = Date.now();
+    const photoData = {
+      id: timestamp,
+      data: imageData,
+      timestamp: timestamp
+    };
     
-    try {
-      // ใช้วิธีสร้าง iframe ที่ซ่อนไว้สำหรับพิมพ์
-      console.log('🖨️ Creating hidden print iframe...');
-      
-      const printFrame = document.createElement('iframe');
-      printFrame.style.position = 'fixed';
-      printFrame.style.top = '0';
-      printFrame.style.left = '0';
-      printFrame.style.width = '0';
-      printFrame.style.height = '0';
-      printFrame.style.border = 'none';
-      printFrame.style.overflow = 'hidden';
-      
-      document.body.appendChild(printFrame);
-      
-      printFrame.onload = () => {
-        try {
-          console.log('✅ Print iframe loaded, preparing content...');
-          
-          // สร้าง HTML content ที่เหมาะสมสำหรับการพิมพ์ A4
-          const printContent = `
-            <!DOCTYPE html>
-            <html>
-              <head>
-                <title>Photobooth Print</title>
-                <style>
-                  @page {
-                    size: A4 portrait;
-                    margin: 0;
-                  }
-                  
-                  body {
-                    margin: 0;
-                    padding: 0;
-                    width: 210mm;
-                    height: 297mm;
-                    background: white;
-                    font-family: Arial, sans-serif;
-                  }
-                  
-                  .print-container {
-                    width: 100%;
-                    height: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    position: relative;
-                  }
-                  
-                  .photo {
-                    max-width: 180mm;
-                    max-height: 250mm;
-                    object-fit: contain;
-                    display: block;
-                  }
-                  
-                  .photo-container {
-                    width: 180mm;
-                    height: 250mm;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    background: white;
-                    border: 1px solid #ddd;
-                  }
-                  
-                  @media print {
-                    body { margin: 0; }
-                    .photo-container { border: none; }
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="print-container">
-                  <div class="photo-container">
-                    <img src="${dataURL}" class="photo" alt="Photobooth Photo" />
-                  </div>
-                </div>
-                <script>
-                  console.log('Print content ready, starting print...');
-                  
-                  // รอให้รูปโหลดเสร็จแล้วพิมพ์
-                  const img = document.querySelector('.photo');
-                  img.onload = () => {
-                    console.log('Image loaded, printing now...');
-                    setTimeout(() => {
-                      window.print();
-                    }, 500);
-                  };
-                  
-                  // ปิด iframe หลังพิมพ์เสร็จ
-                  window.addEventListener('afterprint', () => {
-                    console.log('Print completed');
-                    setTimeout(() => {
-                      window.close();
-                    }, 1000);
-                  });
-                  
-                  // Fallback: ปิดหลัง 5 วินาที
-                  setTimeout(() => {
-                    if (!window.closed) {
-                      console.log('Fallback: closing iframe');
-                      window.close();
-                    }
-                  }, 5000);
-                </script>
-              </body>
-            </html>
-          `;
-          
-          printFrame.contentWindow?.document.write(printContent);
-          printFrame.contentWindow?.document.close();
-          
-          console.log('✅ Print content written, waiting for image load...');
-          
-          // Resolve promise หลังจาก content พร้อม
-          setTimeout(() => {
-            console.log('✅ Print iframe ready');
-            resolve(true);
-          }, 1000);
-          
-        } catch (iframeError) {
-          console.error('❌ Iframe content error:', iframeError);
-          document.body.removeChild(printFrame);
-          reject(iframeError);
-        }
-      };
-      
-      // เริ่มโหลด iframe
-      printFrame.src = 'about:blank';
-      
-    } catch (error) {
-      console.error('❌ Browser print error:', error);
-      reject(error);
-    }
-  });
+    // เพิ่มรูปใหม่เข้าไปใน array
+    const updatedPhotos = [photoData, ...savedPhotos.slice(0, 9)]; // เก็บแค่ 10 รูปล่าสุด
+    setSavedPhotos(updatedPhotos);
+    
+    // บันทึกลง local storage
+    localStorage.setItem('photobooth_photos', JSON.stringify(updatedPhotos));
+    
+    console.log('💾 Photo saved to local storage, total photos:', updatedPhotos.length);
+  } catch (error) {
+    console.error('❌ Error saving photo:', error);
+  }
 };
-
-  // โหลดรูปที่บันทึกไว้จาก local storage
-  const loadSavedPhotos = () => {
-    try {
-      const saved = localStorage.getItem('photobooth_photos');
-      if (saved) {
-        const photos = JSON.parse(saved);
-        setSavedPhotos(photos);
-        console.log('📸 Loaded saved photos:', photos.length);
-      }
-    } catch (error) {
-      console.error('❌ Error loading saved photos:', error);
-    }
-  };
-
-  // บันทึกรูปลง local storage
-  const savePhotoToStorage = (imageData: string) => {
-    try {
-      const timestamp = Date.now();
-      const photoData = {
-        id: timestamp,
-        data: imageData,
-        timestamp: timestamp
-      };
-      
-      // เพิ่มรูปใหม่เข้าไปใน array
-      const updatedPhotos = [photoData, ...savedPhotos.slice(0, 9)]; // เก็บแค่ 10 รูปล่าสุด
-      setSavedPhotos(updatedPhotos);
-      
-      // บันทึกลง local storage
-      localStorage.setItem('photobooth_photos', JSON.stringify(updatedPhotos));
-      
-      console.log('💾 Photo saved to local storage, total photos:', updatedPhotos.length);
-    } catch (error) {
-      console.error('❌ Error saving photo:', error);
-    }
-  };
 
