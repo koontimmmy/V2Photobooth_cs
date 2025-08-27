@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -18,7 +17,7 @@ export default function Home() {
   
   // Payment states
   const [showPayment, setShowPayment] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [, setPaymentMethod] = useState<string>("");
   const [qrCodeData, setQrCodeData] = useState<string>("");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentTimeout, setPaymentTimeout] = useState(0);
@@ -27,15 +26,8 @@ export default function Home() {
   const [showGallery, setShowGallery] = useState(false);
   const [savedPhotos, setSavedPhotos] = useState<Array<{id: number, data: string, timestamp: number}>>([]);
 
-  // Auto start camera on mount
-  useEffect(() => {
-    startCamera();
-    // โหลดรูปที่บันทึกไว้จาก local storage
-    loadSavedPhotos(setSavedPhotos);
-  }, []);
-
-  // -------- Camera Control ----------
-  const startCamera = async () => {
+  // Auto start camera on mount  
+  const startCamera = useCallback(async () => {
     if (isActive) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -46,20 +38,21 @@ export default function Home() {
         await videoRef.current.play();
         setIsActive(true);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Camera error:", err);
-      setError("Cannot access camera: " + err.message);
+      setError("Cannot access camera: " + (err instanceof Error ? err.message : 'Unknown error'));
     }
-  };
+  }, [isActive]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-      setIsActive(false);
-    }
-  };
+  useEffect(() => {
+    startCamera();
+    // โหลดรูปที่บันทึกไว้จาก local storage
+    loadSavedPhotos(setSavedPhotos);
+  }, [startCamera]);
+
+  // -------- Camera Control ----------
+
+
 
   // -------- Countdown + Capture ----------
   const startCountdown = () => {
@@ -186,8 +179,8 @@ export default function Home() {
         
         if (result.qrCode) {
           setQrCodeData(result.qrCode);
-          // เริ่ม countdown 30 วินาที
-          startPaymentTimeout();
+          // เริ่ม countdown ตามเวลาหมดอายุของ QR (fallback 120 วินาทีหากไม่มี)
+          startPaymentTimeout(result.qrExpiry);
           // เริ่มตรวจสอบสถานะการชำระเงิน
           startPaymentPolling(result.chargeId);
         } else if (result.redirectUrl) {
@@ -214,18 +207,25 @@ export default function Home() {
     setPaymentMethod("");
     setPaymentTimeout(0);
     // หยุดการตรวจสอบสถานะ
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
     // หยุด timeout
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
   };
 
   // เริ่ม countdown 30 วินาที
-  const startPaymentTimeout = () => {
-    setPaymentTimeout(30);
+  const startPaymentTimeout = (expiryISO?: string) => {
+    if (expiryISO) {
+      const expiryMs = new Date(expiryISO).getTime();
+      const nowMs = Date.now();
+      const remainingSec = Math.max(0, Math.floor((expiryMs - nowMs) / 1000));
+      setPaymentTimeout(remainingSec || 120);
+    } else {
+      setPaymentTimeout(120);
+    }
     
     const interval = setInterval(() => {
       setPaymentTimeout((prev) => {
@@ -240,7 +240,7 @@ export default function Home() {
     }, 1000);
     
     // เก็บ interval reference
-    (window as any).timeoutInterval = interval;
+    (window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval = interval;
   };
 
   const handlePaymentTimeout = () => {
@@ -250,11 +250,11 @@ export default function Home() {
     setPaymentTimeout(0);
     
     // หยุดการตรวจสอบสถานะ
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
   };
 
@@ -283,17 +283,32 @@ export default function Home() {
           setError('Payment failed');
           cancelPayment();
           clearInterval(interval);
+        } else if (result.status === 'expired') {
+          console.log('⏰ Payment expired');
+          setError('Payment expired');
+          cancelPayment();
+          clearInterval(interval);
         } else {
           console.log('⏳ Payment still pending, continuing to poll...');
         }
         // สำหรับ 'pending' จะ continue polling
       } catch (error) {
         console.error('Payment status check failed:', error);
+        // ไม่หยุด polling เมื่อเกิด error เพราะอาจเป็น network issue ชั่วคราว
       }
-    }, 2000); // เช็คทุก 2 วินาที
+    }, 3000); // เช็คทุก 3 วินาที (ลดความถี่ลง)
     
     // เก็บ interval reference
-    (window as any).pollInterval = interval;
+    (window as { pollInterval?: NodeJS.Timeout }).pollInterval = interval;
+    
+    // หยุด polling หลังจาก 5 นาที (100 ครั้ง)
+    setTimeout(() => {
+      if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval === interval) {
+        console.log('⏰ Payment polling timeout - stopping');
+        clearInterval(interval);
+        (window as { pollInterval?: NodeJS.Timeout }).pollInterval = undefined;
+      }
+    }, 5 * 60 * 1000);
   };
 
   const handlePaymentSuccess = () => {
@@ -304,11 +319,11 @@ export default function Home() {
     setShowPayment(false);
     
     // หยุด timers
-    if ((window as any).pollInterval) {
-      clearInterval((window as any).pollInterval);
+    if ((window as { pollInterval?: NodeJS.Timeout }).pollInterval) {
+      clearInterval((window as { pollInterval?: NodeJS.Timeout }).pollInterval);
     }
-    if ((window as any).timeoutInterval) {
-      clearInterval((window as any).timeoutInterval);
+    if ((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval) {
+      clearInterval((window as { timeoutInterval?: NodeJS.Timeout }).timeoutInterval);
     }
     
     // เริ่มการถ่ายรูป
@@ -454,6 +469,32 @@ export default function Home() {
               className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
             >
               Test Success
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  // ทดสอบสร้าง payment status ใหม่
+                  const response = await fetch('/api/payment-status?action=test-success', {
+                    method: 'PUT'
+                  });
+                  const result = await response.json();
+                  
+                  if (response.ok) {
+                    console.log('✅ Test payment status created:', result);
+                    // เริ่ม polling ด้วย chargeId ใหม่
+                    startPaymentPolling(result.chargeId);
+                    // แสดง QR code ใหม่
+                    setQrCodeData('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+                  } else {
+                    console.error('❌ Failed to create test payment status:', result);
+                  }
+                } catch (error) {
+                  console.error('❌ Error creating test payment status:', error);
+                }
+              }}
+              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            >
+              Create Test Payment
             </button>
           </div>
         </div>
