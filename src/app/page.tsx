@@ -411,15 +411,7 @@ export default function Home() {
             </button>
           </div>
           
-          {/* Gallery Button */}
-          {savedPhotos.length > 0 && (
-            <button
-              onClick={() => setShowGallery(true)}
-              className="mt-8 px-8 py-4 bg-blue-600 text-white rounded-lg font-bold text-xl hover:bg-blue-700 flex items-center"
-            >
-              📸 ดูรูปที่บันทึกไว้ ({savedPhotos.length})
-            </button>
-          )}
+          {/* Gallery Button - disabled */}
         </div>
       ) : !showPayment ? (
         // Photo Control
@@ -518,74 +510,7 @@ export default function Home() {
         <p className="text-red-600 mt-4 text-center max-w-md">{error}</p>
       )}
 
-      {/* Gallery Modal */}
-      {showGallery && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold">📸 รูปที่บันทึกไว้</h2>
-              <button
-                onClick={() => setShowGallery(false)}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
-              >
-                ✕ ปิด
-              </button>
-            </div>
-            
-            {savedPhotos.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">ยังไม่มีรูปที่บันทึกไว้</p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {savedPhotos.map((photo: any, index: number) => (
-                  <div key={photo.id} className="relative group">
-                    <img
-                      src={photo.data}
-                      alt={`Photo ${index + 1}`}
-                      className="w-full h-48 object-cover rounded-lg border-2 border-gray-200"
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2">
-                        <button
-                          onClick={() => {
-                            setCapturedImageData(photo.data);
-                            setShowImage(true);
-                            setShowGallery(false);
-                          }}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                        >
-                          👁️ ดู
-                        </button>
-                        <button
-                          onClick={() => {
-                            autoPrint(photo.data);
-                            setShowGallery(false);
-                          }}
-                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                        >
-                          🖨️ พิมพ์
-                        </button>
-                        <button
-                          onClick={() => {
-                            const updatedPhotos = savedPhotos.filter((p: any) => p.id !== photo.id);
-                            setSavedPhotos(updatedPhotos);
-                            localStorage.setItem('photobooth_photos', JSON.stringify(updatedPhotos));
-                          }}
-                          className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
-                        >
-                          🗑️ ลบ
-                        </button>
-                      </div>
-                    </div>
-                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs">
-                      {new Date(photo.timestamp).toLocaleString('th-TH')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Gallery Modal - disabled */}
     </div>
   );
 }
