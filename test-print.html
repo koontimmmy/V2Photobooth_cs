@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Print API</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 15px 30px; font-size: 18px; margin: 10px; }
+        #log { background: #f0f0f0; padding: 15px; margin-top: 20px; height: 400px; overflow-y: auto; }
+        #status { padding: 10px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🖨️ Print API Tester</h1>
+    
+    <button onclick="testPrint()">Test Print API</button>
+    <button onclick="clearLog()">Clear Log</button>
+    
+    <div id="status"></div>
+    <div id="log"></div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function setStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = isError ? 'error' : 'success';
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('status').textContent = '';
+            document.getElementById('status').className = '';
+        }
+
+        async function testPrint() {
+            log('🚀 Starting print API test...');
+            setStatus('Testing...');
+
+            try {
+                // สร้าง base64 image ทดสอบ (1x1 pixel PNG)
+                const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+                
+                log('📤 Sending print request...');
+                
+                const response = await fetch('/api/print', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        imageData: testImageData,
+                        printId: Date.now()
+                    })
+                });
+
+                log(`📊 Response status: ${response.status} ${response.statusText}`);
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    log('✅ Print API SUCCESS!');
+                    log(`📝 Message: ${result.message}`);
+                    log(`🖥️ Platform: ${result.platform}`);
+                    log(`📁 File: ${result.fileName}`);
+                    if (result.command) log(`⌨️ Command: ${result.command}`);
+                    if (result.result) log(`📋 Result: ${result.result}`);
+                    
+                    setStatus('✅ Print test successful!');
+                } else {
+                    log('❌ Print API FAILED');
+                    log(`🔍 Error: ${result.error}`);
+                    log(`📋 Details: ${JSON.stringify(result.details || 'No details')}`);
+                    log(`💡 Suggestion: ${result.suggestion || 'No suggestion'}`);
+                    
+                    setStatus('❌ Print test failed', true);
+                }
+
+            } catch (error) {
+                log(`💥 Network/Parse Error: ${error.message}`);
+                setStatus('💥 Network error', true);
+            }
+        }
+
+        // Auto-run test on page load
+        window.addEventListener('load', () => {
+            log('🔧 Print API Tester loaded');
+            log('📱 Click "Test Print API" to test the printing system');
+        });
+    </script>
+</body>
+</html>
