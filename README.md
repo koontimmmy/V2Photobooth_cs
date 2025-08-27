@@ -241,3 +241,4 @@ lp -d EPSON_L3250_Series_2 /path/to/test-image.png
 **Last Updated**: August 2025  
 **Author**: Photobooth Team# V2Photobooth_cs
 # photoboothV3
+# photoboothV3
