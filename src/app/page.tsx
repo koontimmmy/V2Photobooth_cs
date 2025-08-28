@@ -517,39 +517,47 @@ export default function Home() {
 
 // Backend Auto Print Function
 const autoPrint = async (dataURL: string) => {
-    const printId = Date.now();
-    try {
-      console.log(`🖨️ autoPrint called! ID: ${printId} - Calling print API...`);
-      
-      // เรียก API endpoint สำหรับพิมพ์
-      const response = await fetch('/api/print', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageData: dataURL,
-          printId: printId
-        })
-      });
-
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
-        console.log('✅ Print API success:', result);
-        console.log(`🖨️ Print job sent: ${result.message}`);
-      } else {
-        console.error('❌ Print API failed:', result);
-        console.log('🔄 Falling back to browser printing...');
-        await browserPrint(dataURL);
-      }
-      
-    } catch (error) {
-      console.error('❌ Print API error:', error);
-      console.log('🔄 Attempting browser fallback...');
-      browserPrint(dataURL);
+  const printId = Date.now();
+  try {
+    console.log(`🖨️ autoPrint called! ID: ${printId} - Using browser printing directly...`);
+    
+    // ใน production ใช้ browser printing เลย ไม่ต้องเรียก backend
+    if (process.env.NODE_ENV === 'production' || window.location.hostname.includes('vercel.app')) {
+      console.log('☁️ Production environment detected, using browser printing directly');
+      await browserPrint(dataURL);
+      return;
     }
-  };
+    
+    // ใน development ลองเรียก backend ก่อน
+    console.log('💻 Development environment, trying backend print API...');
+    const response = await fetch('/api/print', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageData: dataURL,
+        printId: printId
+      })
+    });
+
+    const result = await response.json();
+    
+    if (response.ok && result.success) {
+      console.log('✅ Print API success:', result);
+      console.log(`🖨️ Print job sent: ${result.message}`);
+    } else {
+      console.error('❌ Print API failed:', result);
+      console.log('🔄 Falling back to browser printing...');
+      await browserPrint(dataURL);
+    }
+    
+  } catch (error) {
+    console.error('❌ Print API error:', error);
+    console.log('🔄 Attempting browser fallback...');
+    await browserPrint(dataURL);
+  }
+};
 
   // Fallback browser printing function
   const browserPrint = (dataURL: string) => {
